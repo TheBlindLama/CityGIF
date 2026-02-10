@@ -1,0 +1,41 @@
+{
+  "manifest_version": 3,
+  "name": "HabboCity Emoji & GIF Extension",
+  "version": "1.0",
+  "description": "Utilisez des emojis et GIFs personnalisés sur HabboCity Nitro.",
+  "permissions": [
+    "storage"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.habbocity.me/*",
+        "*://*.habbocity.fr/*"
+      ],
+      "js": [
+        "config.js",
+        "mapping.js",
+        "content.js"
+      ],
+      "css": [
+        "style.css"
+      ],
+      "run_at": "document_end",
+      "all_frames": true
+    }
+  ],
+  "action": {
+    "default_title": "HabboCity Emojis"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "style.css"
+      ],
+      "matches": [
+        "*://*.habbocity.me/*",
+        "*://*.habbocity.fr/*"
+      ]
+    }
+  ]
+}

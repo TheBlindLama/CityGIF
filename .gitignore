@@ -1,0 +1,18 @@
+# Extensions files
+*.crx
+*.pem
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Environment (Safety first)
+.env
+.env.local
+.env.*.local
+config.js
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
