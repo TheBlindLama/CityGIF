@@ -1,27 +1,21 @@
-# HabboCity Nitro Emoji & GIF Extension
+# HabboCity Emoji & GIF Extension
 
-Cette extension Chromium permet d'utiliser des emojis et GIFs personnalisés sur le client Nitro de HabboCity. Elle s'intègre nativement au chat pour enrichir l'expérience utilisateur tout en restant légère.
+Browser extension for HabboCity Nitro chat.
 
-## Fonctionnement Technique
+## What it does
 
-1.  **Parsing de Codes Directs** : L'extension scanne les messages envoyés et reçus. Les codes de type `:dance:` sont automatiquement détectés et remplacés par les GIFs correspondants s'ils existent dans la base.
-2.  **Synchronisation Cloud (Supabase)** : La liste des GIFs est stockée sur **Supabase** et synchronisée au lancement. Cela permet une mise à jour instantanée pour tous les utilisateurs sans recharger l'extension.
-3.  **Rendu Local (Twemoji)** : Pour garantir une esthétique homogène,et contourner le blocage des emojis unicode, les codes emoji comme :smile: ou :cry:sont automatiquement convertis en images **Twemoji** (le style standard de Twitter/Discord).
-Chaque twemoji a son :code: qui lui est assigné
-4.  **Gestion de l'Identité** : L'extension utilise un système de login transparent via la commande `:login` pour identifier les contributeurs et administrateurs.
+- Adds an emoji/GIF picker next to the chat input.
+- Converts `:code:` tokens (example: `:dance:`) into custom GIFs in chat.
+- Converts supported emoji codes into Twemoji-style images.
+- Syncs GIF data from Supabase so updates are shared across users.
+- Supports user PIN login for contributor/admin actions.
 
-## Fonctionnalités Clés
+If someone does not have the extension, they still see readable text codes.
 
--   **Interface Intuitive** : Un panel fluide avec des onglets dédiés pour les GIFs et les Emojis.
--   **Auto-Send** : Un simple clic sur un GIF suffit pour l'envoyer instantanément si votre champ de texte est vide.
--   **Adaptation Intelligente** : Les GIFs sont automatiquement redimensionnés pour s'intégrer parfaitement aux dimensions des bulles de chat Nitro.
--   **Gestion Administrative Intégrée** : Les administrateurs peuvent ajouter ou supprimer des GIFs directement depuis l'extension
--   **Lisibilité Maximale** : Pour les joueurs n'ayant pas l'extension, les codes restent lisibles (ex: `:drake:`) 
+## Install (Chrome/Chromium)
 
-## Installation
-
-1.  Activez le **Mode Développeur** dans `chrome://extensions`.
-2.  Cliquez sur **Charger l'extension décompressée** et sélectionnez le dossier racine.
-3.  Utilisez le bouton `🙂` à côté de votre barre de chat pour commencer !
-
-
+1. Download or clone this repository.
+2. Open `chrome://extensions`.
+3. Enable **Developer mode**.
+4. Click **Load unpacked** and select this project folder.
+5. Open HabboCity and use the emoji button next to the chat box.
