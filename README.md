@@ -1,4 +1,4 @@
-# HabboCity Emoji & GIF Extension
+# City+
 
 Browser extension for HabboCity Nitro chat.
 

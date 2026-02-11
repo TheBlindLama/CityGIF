@@ -1,11 +1,16 @@
 {
   "manifest_version": 3,
-  "name": "HabboCity Emoji & GIF Extension",
+  "name": "City+",
   "version": "1.0",
   "description": "Utilisez des emojis et GIFs personnalisés sur HabboCity Nitro.",
   "permissions": [
     "storage"
   ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
   "content_scripts": [
     {
       "matches": [
@@ -31,7 +36,12 @@
     }
   ],
   "action": {
-    "default_title": "HabboCity Emojis"
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    },
+    "default_title": "City+"
   },
   "web_accessible_resources": [
     {
