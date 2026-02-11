@@ -7,8 +7,8 @@ if (typeof SUPABASE_KEY === 'undefined') {
     console.error("[HabboCityEmoji] ERREUR : config.js manquant ou mal configuré.");
 }
 
-
-let EMOJI_MAPPING = {
+// Use var to ensure they are available to content.js even if scope issues exist
+var EMOJI_MAPPING = {
     ":dance:": { url: "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExNHJzOHJqcmR6eXp6Z3Z6Z3Z6Z3Z6Z3Z6Z3Z6Z3Z6Z3Z6Z3Z6Z3ZjJmVwPXYxX2ludGVybmFsX2dpZl9ieV9pZCZjdD1n/l3V0lsG6XlYZQM6r6/giphy.gif", user: "System" },
     ":fire:": { url: "https://media.giphy.com/media/26gsjCZpPolPr3sBy/giphy.gif", user: "System" },
     ":love:": { url: "https://media.giphy.com/media/l41lTfuxV5RWDY86Y/giphy.gif", user: "System" },
@@ -50,8 +50,9 @@ async function syncEmojis() {
         if (Array.isArray(data)) {
             const newMapping = {};
             data.forEach(item => {
+                const normalizedUrl = normalizeEmojiUrl(item.url);
                 newMapping[item.code] = {
-                    url: item.url,
+                    url: normalizedUrl,
                     user: item.created_by || 'Anonyme'
                 };
             });
@@ -67,17 +68,39 @@ async function syncEmojis() {
     }
 }
 
+function normalizeEmojiUrl(url) {
+    if (!url) return null;
+    let normalized = String(url).trim();
+    if (!normalized) return null;
+
+    if (normalized.startsWith('/storage/v1/object/gifs/')) {
+        return `${SUPABASE_URL}${normalized.replace('/storage/v1/object/gifs/', '/storage/v1/object/public/gifs/')}`;
+    }
+    if (normalized.startsWith('/storage/v1/object/public/gifs/')) {
+        return `${SUPABASE_URL}${normalized}`;
+    }
+    if (normalized.startsWith(`${SUPABASE_URL}/storage/v1/object/gifs/`)) {
+        return normalized.replace('/storage/v1/object/gifs/', '/storage/v1/object/public/gifs/');
+    }
+    if (!/^https?:\/\//i.test(normalized) && normalized.includes('/')) {
+        return `${SUPABASE_URL}/storage/v1/object/public/gifs/${normalized.replace(/^\/+/, '')}`;
+    }
+
+    return normalized;
+}
+
 /**
  * Vérifie si l'utilisateur est admin
  */
 async function checkAdminStatus(username) {
     if (!username) return false;
     try {
+        const safeUsername = encodeURIComponent(String(username).trim());
         // Log query for debugging
         console.log(`[HabboCityEmoji] Vérification admin pour : "${username}"`);
 
         // Use .ilike for case-insensitive check
-        const response = await fetch(`${SUPABASE_URL}/rest/v1/admins?username=ilike.${username}&select=*`, {
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/admins?username=ilike.${safeUsername}&select=username`, {
             headers: {
                 "apikey": SUPABASE_KEY,
                 "Authorization": `Bearer ${SUPABASE_KEY}`
@@ -111,7 +134,7 @@ async function checkAdminStatus(username) {
 // Initial Sync
 syncEmojis();
 
-const BYPASS_EMOJI_MAPPING = {
+var BYPASS_EMOJI_MAPPING = {
     "😀": ":smile:", "😁": ":grin:", "😂": ":joy:", "🤣": ":rofl:", "😃": ":smiley:", "😄": ":smile_eyes:", "😅": ":sweat_smile:", "😆": ":laughing:", "😉": ":wink:", "😊": ":blush:", "😋": ":yum:", "😎": ":cool:", "😍": ":heart_eyes:", "😘": ":kissing_heart:", "😗": ":kissing:", "😙": ":kissing_smiling_eyes:", "😚": ":kissing_closed_eyes:", "🙂": ":slight_smile:", "🤗": ":hugging:", "🤩": ":star_eyes:",
     "🤔": ":thinking:", "🤨": ":raised_eyebrow:", "😐": ":neutral_face:", "😑": ":expressionless:", "😶": ":no_mouth:", "🙄": ":rolling_eyes:", "😏": ":smirking:", "😣": ":persevering:", "😥": ":disappointed_relieved:", "😮": ":open_mouth:", "🤐": ":zipper_mouth:", "😯": ":hushed:", "😪": ":sleepy:", "😫": ":tired_face:", "😴": ":sleeping:", "😌": ":relieved:", "😛": ":stuck_out_tongue:", "😜": ":stuck_out_tongue_winking_eye:", "😝": ":stuck_out_tongue_closed_eyes:", "🤤": ":drooling_face:",
     "😒": ":unamused:", "😓": ":sweat:", "😔": ":pensive:", "😕": ":confused:", "🙃": ":upside_down:", "🤑": ":money_mouth:", "😲": ":astonished:", "☹️": ":frowning_face:", "🙁": ":slight_frowning_face:", "😖": ":confounded:", "😞": ":disappointed:", "😟": ":worried:", "😤": ":triumph:", "😢": ":cry:", "😭": ":sob:", "😦": ":frowning_open_mouth:", "😧": ":anguished:", "😨": ":fearful:", "😩": ":weary:", "🤯": ":exploding_head:",
@@ -120,10 +143,15 @@ const BYPASS_EMOJI_MAPPING = {
     "💋": ":kiss:", "❤️": ":heart:", "🔥": ":fire:", "✨": ":sparkles:", "⭐": ":star:", "⚡": ":zap:", "🌈": ":rainbow:", "☀️": ":sun:", "☁️": ":cloud:", "❄️": ":snowflake:", "🌊": ":ocean:", "🎈": ":balloon:", "🎉": ":tada:", "🎁": ":gift:", "🎂": ":birthday:", "🏆": ":trophy:", "🍕": ":pizza:", "🍔": ":burger:", "🍟": ":fries:", "🍦": ":icecream:"
 };
 
-const REVERSE_BYPASS_MAPPING = Object.entries(BYPASS_EMOJI_MAPPING).reduce((acc, [emoji, alias]) => {
+var REVERSE_BYPASS_MAPPING = Object.entries(BYPASS_EMOJI_MAPPING).reduce((acc, [emoji, alias]) => {
     acc[alias] = emoji;
     return acc;
 }, {});
+
+// Explicitly attach to global scope
+window.EMOJI_MAPPING = EMOJI_MAPPING;
+window.BYPASS_EMOJI_MAPPING = BYPASS_EMOJI_MAPPING;
+window.REVERSE_BYPASS_MAPPING = REVERSE_BYPASS_MAPPING;
 
 /**
  * Formatte l'URL Twemoji pour un emoji donné
@@ -136,17 +164,28 @@ function getTwemojiUrl(emoji) {
             .map(char => char.codePointAt(0).toString(16))
             .filter(cp => cp !== 'fe0f') // Remove variation selector for Twemoji compatibility
             .join('-');
-        return `https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/${codePoints}.png`;
+        return `https://cdn.jsdelivr.net/gh/twitter/twemoji@latest/assets/72x72/${codePoints}.png`;
     } catch (e) {
         return null;
     }
 }
+window.getTwemojiUrl = getTwemojiUrl;
 
 /**
  * Détermine si une URL est un GIF
  */
 function isGif(url) {
-    return url && (url.toLowerCase().endsWith('.gif') || url.toLowerCase().includes('giphy.com/media/'));
+    if (!url) return false;
+    const lower = String(url).toLowerCase();
+    return (
+        lower.endsWith('.gif') ||
+        lower.includes('.gif?') ||
+        lower.includes('giphy.com/media/') ||
+        lower.includes('/storage/v1/object/public/gifs/') ||
+        lower.includes('/storage/v1/object/gifs/')
+    );
 }
+window.isGif = isGif;
+
 
 

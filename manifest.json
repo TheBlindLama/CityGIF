@@ -13,6 +13,7 @@
         "*://*.habbocity.fr/*"
       ],
       "js": [
+        "supabase.js",
         "config.js",
         "mapping.js",
         "content.js"
