@@ -16,6 +16,11 @@
         "supabase.js",
         "config.js",
         "mapping.js",
+        "modules/core-utils.js",
+        "modules/supabase-auth.js",
+        "modules/pin-ui.js",
+        "modules/room-service.js",
+        "modules/player-service.js",
         "content.js"
       ],
       "css": [

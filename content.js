@@ -5,384 +5,62 @@
 
 (function () {
     // --- UTILS ---
-    /**
-     * DÃƒÂ©termine si une URL est un GIF
-     */
-    function isGif(url) {
-        if (!url) return false;
-        const lower = String(url).toLowerCase();
-        return (
-            lower.endsWith('.gif') ||
-            lower.includes('.gif?') ||
-            lower.includes('giphy.com/media/') ||
-            lower.includes('/storage/v1/object/public/gifs/') ||
-            lower.includes('/storage/v1/object/gifs/')
-        );
+    const CoreUtils = window.CityGifCoreUtils;
+    const SupabaseAuth = window.CityGifSupabaseAuth;
+    const PinUI = window.CityGifPinUI;
+    const RoomServiceModule = window.CityGifRoomService;
+    const PlayerServiceModule = window.CityGifPlayerService;
+    if (!CoreUtils || !SupabaseAuth || !PinUI || !RoomServiceModule || !PlayerServiceModule) {
+        console.error("[HabboCityEmoji] Required modules are missing. Check manifest script order.");
+        return;
     }
 
-    function normalizeSupabaseGifUrl(url) {
-        if (!url) return null;
-        let normalized = String(url).trim();
-        if (!normalized) return null;
+    const {
+        isGif,
+        sanitizeUsername,
+        escapeHtml,
+        normalizeRoomName,
+        normalizePin,
+        sleep,
+        EXT_STORAGE_KEYS,
+        hasExtensionStorage,
+        readLegacyLocalStorageValue,
+        removeLegacyLocalStorageKey,
+        getExtensionStorage,
+        setExtensionStorage,
+        removeExtensionStorage
+    } = CoreUtils;
 
-        if (normalized.startsWith('/storage/v1/object/gifs/')) {
-            return `${SUPABASE_URL}${normalized.replace('/storage/v1/object/gifs/', '/storage/v1/object/public/gifs/')}`;
-        }
-        if (normalized.startsWith('/storage/v1/object/public/gifs/')) {
-            return `${SUPABASE_URL}${normalized}`;
-        }
-        if (normalized.startsWith(`${SUPABASE_URL}/storage/v1/object/gifs/`)) {
-            return normalized.replace('/storage/v1/object/gifs/', '/storage/v1/object/public/gifs/');
-        }
-
-        return normalized;
-    }
-
-    function extractSupabaseGifPath(url) {
-        const normalized = normalizeSupabaseGifUrl(url);
-        if (!normalized) return null;
-        const clean = String(normalized).split('#')[0].split('?')[0];
-
-        const publicPrefix = `${SUPABASE_URL}/storage/v1/object/public/gifs/`;
-        const privatePrefix = `${SUPABASE_URL}/storage/v1/object/gifs/`;
-        if (clean.startsWith(publicPrefix)) {
-            return clean.slice(publicPrefix.length);
-        }
-        if (clean.startsWith(privatePrefix)) {
-            return clean.slice(privatePrefix.length);
-        }
-        if (clean.startsWith('/storage/v1/object/public/gifs/')) {
-            return clean.replace('/storage/v1/object/public/gifs/', '');
-        }
-        if (clean.startsWith('/storage/v1/object/gifs/')) {
-            return clean.replace('/storage/v1/object/gifs/', '');
-        }
-        return null;
-    }
-
-    function sanitizeUsername(raw) {
-        if (!raw) return null;
-        let name = String(raw).trim();
-        if (!name) return null;
-        if (name.endsWith(':')) name = name.slice(0, -1).trim();
-        return name || null;
-    }
-
-    function escapeHtml(value) {
-        return String(value || '')
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#39;');
-    }
-
-    function normalizeRoomName(raw) {
-        const text = String(raw || '').replace(/\s+/g, ' ').trim();
-        if (!text) return null;
-        if (text.length > 40) return null;
-        return text;
-    }
-
-    function normalizePin(raw) {
-        const pin = String(raw || '').trim();
-        return /^\d{4}$/.test(pin) ? pin : null;
-    }
-
-    function sleep(ms) {
-        return new Promise(resolve => setTimeout(resolve, ms));
-    }
-
-    const EXT_STORAGE_KEYS = {
-        user: 'habbo_ext_user',
-        pin: 'habbo_ext_pin',
-        room: 'habbo_ext_room'
-    };
-
-    function hasExtensionStorage() {
-        return typeof chrome !== 'undefined' && !!chrome.storage && !!chrome.storage.local;
-    }
-
-    function readLegacyLocalStorageValue(key) {
-        try {
-            return localStorage.getItem(key);
-        } catch (e) {
-            return null;
-        }
-    }
-
-    function removeLegacyLocalStorageKey(key) {
-        try {
-            localStorage.removeItem(key);
-        } catch (e) { }
-    }
-
-    function getExtensionStorage(keys) {
-        if (!hasExtensionStorage()) return Promise.resolve({});
-        return new Promise((resolve) => {
-            chrome.storage.local.get(keys, (result) => {
-                resolve(result || {});
-            });
-        });
-    }
-
-    function setExtensionStorage(values) {
-        if (!hasExtensionStorage()) return;
-        chrome.storage.local.set(values);
-    }
-
-    function removeExtensionStorage(keys) {
-        if (!hasExtensionStorage()) return;
-        chrome.storage.local.remove(keys);
-    }
+    const normalizeSupabaseGifUrl = (url) => CoreUtils.normalizeSupabaseGifUrl(url, SUPABASE_URL);
+    const extractSupabaseGifPath = (url) => CoreUtils.extractSupabaseGifPath(url, SUPABASE_URL);
 
     async function getUserRecord(username) {
-        if (!username) return null;
-        try {
-            const response = await fetch(`${SUPABASE_URL}/rest/v1/users?username=ilike.${encodeURIComponent(username)}&select=username&limit=1`, {
-                headers: {
-                    "apikey": SUPABASE_KEY,
-                    "Authorization": `Bearer ${SUPABASE_KEY}`,
-                    "Accept": "application/json"
-                }
-            });
-            if (!response.ok) return null;
-            const rows = await response.json();
-            return rows && rows[0] ? rows[0] : null;
-        } catch (e) {
-            return null;
-        }
+        return SupabaseAuth.getUserRecord({
+            supabaseUrl: SUPABASE_URL,
+            supabaseKey: SUPABASE_KEY,
+            username
+        });
     }
 
     async function verifyUserPin(username, pin) {
-        if (!username || !pin) return false;
-        try {
-            const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/verify_user_pin`, {
-                method: 'POST',
-                headers: {
-                    "apikey": SUPABASE_KEY,
-                    "Authorization": `Bearer ${SUPABASE_KEY}`,
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({
-                    p_username: username,
-                    p_pin: pin
-                })
-            });
-            if (!response.ok) return false;
-            const data = await response.json();
-            return data === true;
-        } catch (e) {
-            return false;
-        }
-    }
-
-    function buildSupabaseAuthHeaders(extraHeaders = {}) {
-        const headers = {
-            "apikey": SUPABASE_KEY,
-            "Authorization": `Bearer ${SUPABASE_KEY}`,
-            ...extraHeaders
-        };
-        if (currentUser) headers["x-habbo-user"] = currentUser;
-        const pin = getPin();
-        if (pin) headers["x-user-pin"] = pin;
-        return headers;
-    }
-
-    async function requestPinInPluginUI({
-        title = 'Security Check',
-        description = 'Enter your 4-digit PIN.',
-        confirm = false,
-        confirmLabel = 'Confirm PIN'
-    } = {}) {
-        return new Promise((resolve) => {
-            let isClosed = false;
-            const safeTitle = escapeHtml(title);
-            const safeDescription = escapeHtml(description);
-            const safeConfirmLabel = escapeHtml(confirmLabel);
-            const overlay = document.createElement('div');
-            overlay.style.cssText = `
-                position: fixed;
-                inset: 0;
-                background: rgba(0,0,0,0.65);
-                z-index: 2147483647;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                padding: 16px;
-            `;
-
-            const modal = document.createElement('div');
-            modal.style.cssText = `
-                width: 100%;
-                max-width: 360px;
-                background: #111827;
-                border: 1px solid rgba(74,144,226,0.45);
-                border-radius: 10px;
-                box-shadow: 0 20px 40px rgba(0,0,0,0.45);
-                padding: 16px;
-                color: white;
-                font-family: system-ui, sans-serif;
-            `;
-            modal.tabIndex = 0;
-            modal.innerHTML = `
-                <div style="font-size:16px;font-weight:700;margin-bottom:6px;">${safeTitle}</div>
-                <div style="font-size:12px;color:rgba(255,255,255,0.7);margin-bottom:12px;">${safeDescription}</div>
-                <div id="ext-pin-step" style="font-size:11px;color:rgba(255,255,255,0.8);margin-bottom:8px;">Enter PIN</div>
-                <div id="ext-pin-display" style="height:42px;display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:12px;border:1px solid rgba(74,144,226,0.45);border-radius:8px;background:#0b1220;"></div>
-                <div id="ext-pin-pad" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px;">
-                    <button type="button" data-pin-digit="1" style="height:38px;border-radius:8px;border:1px solid rgba(255,255,255,0.2);background:#111827;color:white;cursor:pointer;">1</button>
-                    <button type="button" data-pin-digit="2" style="height:38px;border-radius:8px;border:1px solid rgba(255,255,255,0.2);background:#111827;color:white;cursor:pointer;">2</button>
-                    <button type="button" data-pin-digit="3" style="height:38px;border-radius:8px;border:1px solid rgba(255,255,255,0.2);background:#111827;color:white;cursor:pointer;">3</button>
-                    <button type="button" data-pin-digit="4" style="height:38px;border-radius:8px;border:1px solid rgba(255,255,255,0.2);background:#111827;color:white;cursor:pointer;">4</button>
-                    <button type="button" data-pin-digit="5" style="height:38px;border-radius:8px;border:1px solid rgba(255,255,255,0.2);background:#111827;color:white;cursor:pointer;">5</button>
-                    <button type="button" data-pin-digit="6" style="height:38px;border-radius:8px;border:1px solid rgba(255,255,255,0.2);background:#111827;color:white;cursor:pointer;">6</button>
-                    <button type="button" data-pin-digit="7" style="height:38px;border-radius:8px;border:1px solid rgba(255,255,255,0.2);background:#111827;color:white;cursor:pointer;">7</button>
-                    <button type="button" data-pin-digit="8" style="height:38px;border-radius:8px;border:1px solid rgba(255,255,255,0.2);background:#111827;color:white;cursor:pointer;">8</button>
-                    <button type="button" data-pin-digit="9" style="height:38px;border-radius:8px;border:1px solid rgba(255,255,255,0.2);background:#111827;color:white;cursor:pointer;">9</button>
-                    <button type="button" id="ext-pin-clear" style="height:38px;border-radius:8px;border:1px solid rgba(255,255,255,0.2);background:#111827;color:white;cursor:pointer;">Clear</button>
-                    <button type="button" data-pin-digit="0" style="height:38px;border-radius:8px;border:1px solid rgba(255,255,255,0.2);background:#111827;color:white;cursor:pointer;">0</button>
-                    <button type="button" id="ext-pin-back" style="height:38px;border-radius:8px;border:1px solid rgba(255,255,255,0.2);background:#111827;color:white;cursor:pointer;">⌫</button>
-                </div>
-                <div id="ext-pin-error" style="min-height:16px;font-size:11px;color:#f87171;margin-bottom:10px;"></div>
-                <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:6px;">
-                    <button id="ext-pin-cancel" type="button" style="padding:8px 12px;border-radius:8px;border:1px solid rgba(255,255,255,0.2);background:transparent;color:white;cursor:pointer;">Cancel</button>
-                </div>
-            `;
-
-            const swallowKeysWhileOpen = (e) => {
-                if (isClosed) return;
-                if (e.key === 'Escape') {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    close(null);
-                    return;
-                }
-                e.preventDefault();
-                e.stopPropagation();
-            };
-            document.addEventListener('keydown', swallowKeysWhileOpen, true);
-            document.addEventListener('keypress', swallowKeysWhileOpen, true);
-            document.addEventListener('keyup', swallowKeysWhileOpen, true);
-
-            const close = (value = null) => {
-                if (isClosed) return;
-                isClosed = true;
-                document.removeEventListener('keydown', swallowKeysWhileOpen, true);
-                document.removeEventListener('keypress', swallowKeysWhileOpen, true);
-                document.removeEventListener('keyup', swallowKeysWhileOpen, true);
-                overlay.remove();
-                resolve(value);
-            };
-
-            overlay.appendChild(modal);
-            document.body.appendChild(overlay);
-
-            try {
-                if (document.activeElement && typeof document.activeElement.blur === 'function') {
-                    document.activeElement.blur();
-                }
-            } catch (e) { }
-
-            const stepEl = modal.querySelector('#ext-pin-step');
-            const displayEl = modal.querySelector('#ext-pin-display');
-            const err = modal.querySelector('#ext-pin-error');
-            const cancelBtn = modal.querySelector('#ext-pin-cancel');
-            const clearBtn = modal.querySelector('#ext-pin-clear');
-            const backBtn = modal.querySelector('#ext-pin-back');
-            const digitButtons = modal.querySelectorAll('[data-pin-digit]');
-
-            let phase = confirm ? 'first' : 'single';
-            let firstPin = '';
-            let currentPin = '';
-
-            const renderDisplay = () => {
-                const dots = [];
-                for (let i = 0; i < 4; i += 1) {
-                    const filled = i < currentPin.length;
-                    dots.push(`<span style="width:10px;height:10px;border-radius:50%;display:inline-block;background:${filled ? '#4a90e2' : 'rgba(255,255,255,0.25)'};"></span>`);
-                }
-                displayEl.innerHTML = dots.join('');
-            };
-
-            const renderStep = () => {
-                if (phase === 'first') {
-                    stepEl.textContent = 'Enter your 4-digit PIN';
-                } else if (phase === 'confirm') {
-                    stepEl.textContent = safeConfirmLabel;
-                } else {
-                    stepEl.textContent = 'Enter your 4-digit PIN';
-                }
-            };
-
-            const advanceIfComplete = () => {
-                if (currentPin.length !== 4) return;
-
-                if (phase === 'single') {
-                    close(currentPin);
-                    return;
-                }
-
-                if (phase === 'first') {
-                    firstPin = currentPin;
-                    currentPin = '';
-                    phase = 'confirm';
-                    err.textContent = '';
-                    renderStep();
-                    renderDisplay();
-                    return;
-                }
-
-                if (phase === 'confirm') {
-                    if (currentPin !== firstPin) {
-                        err.textContent = 'PIN confirmation does not match.';
-                        currentPin = '';
-                        renderDisplay();
-                        return;
-                    }
-                    close(firstPin);
-                }
-            };
-
-            const appendDigit = (digit) => {
-                if (!/^\d$/.test(digit) || currentPin.length >= 4) return;
-                currentPin += digit;
-                err.textContent = '';
-                renderDisplay();
-                advanceIfComplete();
-            };
-
-            cancelBtn.onclick = () => close(null);
-            clearBtn.onclick = () => {
-                currentPin = '';
-                err.textContent = '';
-                renderDisplay();
-            };
-            backBtn.onclick = () => {
-                currentPin = currentPin.slice(0, -1);
-                err.textContent = '';
-                renderDisplay();
-            };
-
-            digitButtons.forEach((btn) => {
-                btn.onclick = () => appendDigit(btn.getAttribute('data-pin-digit'));
-            });
-
-            overlay.onclick = (e) => {
-                if (e.target === overlay) close(null);
-            };
-            modal.onkeydown = (e) => {
-                // Defensive duplicate: global capture listener also blocks keys.
-                e.preventDefault();
-                e.stopPropagation();
-            };
-
-            renderStep();
-            renderDisplay();
-            setTimeout(() => modal.focus(), 0);
+        return SupabaseAuth.verifyUserPin({
+            supabaseUrl: SUPABASE_URL,
+            supabaseKey: SUPABASE_KEY,
+            username,
+            pin
         });
     }
 
+    function buildSupabaseAuthHeaders(extraHeaders = {}) {
+        return SupabaseAuth.buildSupabaseAuthHeaders({
+            supabaseKey: SUPABASE_KEY,
+            currentUser,
+            pin: getPin(),
+            extraHeaders
+        });
+    }
+
+    const requestPinInPluginUI = PinUI.requestPinInPluginUI;
     async function ensurePinReadyForCurrentUser(options = {}) {
         const interactive = !!options.interactive;
         if (!currentUser) return false;
@@ -1735,217 +1413,137 @@
 
     // --- YOUTUBE PLAYER & MUSIC TAB ---
 
-    async function upsertCurrentUserRoomPresence(roomName = currentRoom) {
-        if (!currentUser) return false;
-        if (!getPin()) return false;
+    const roomService = RoomServiceModule.createRoomService({
+        supabaseUrl: SUPABASE_URL,
+        supabaseKey: SUPABASE_KEY,
+        normalizeRoomName,
+        sleep,
+        buildSupabaseAuthHeaders,
+        getPin: () => getPin(),
+        getCurrentUser: () => currentUser,
+        getCurrentRoom: () => currentRoom,
+        getCurrentRoomData: () => currentRoomData,
+        setCurrentRoomData: (next) => {
+            currentRoomData = next;
+        },
+        getLastRoomPruneAttemptAtMs: () => lastRoomPruneAttemptAtMs,
+        setLastRoomPruneAttemptAtMs: (next) => {
+            lastRoomPruneAttemptAtMs = next;
+        },
+        isCurrentUserDj: () => isCurrentUserDj(),
+        roomActivePresenceWindowMs: ROOM_ACTIVE_PRESENCE_WINDOW_MS,
+        roomEmptyPruneGraceMs: ROOM_EMPTY_PRUNE_GRACE_MS,
+        roomPruneCooldownMs: ROOM_PRUNE_COOLDOWN_MS,
+        roomPruneBatchSize: ROOM_PRUNE_BATCH_SIZE
+    });
 
-        try {
-            const response = await fetch(`${SUPABASE_URL}/rest/v1/users?username=eq.${encodeURIComponent(currentUser)}`, {
-                method: 'PATCH',
-                headers: buildSupabaseAuthHeaders({
-                    "Content-Type": "application/json",
-                    "Prefer": "return=minimal"
-                }),
-                body: JSON.stringify({
-                    current_room: roomName || 'Lobby',
-                    last_seen: new Date().toISOString()
-                })
-            });
-            return response.ok;
-        } catch (e) {
-            return false;
+    const {
+        upsertCurrentUserRoomPresence,
+        removeCurrentUserRoomPresence,
+        fetchRoomPresenceCountMap,
+        pickOldestUserFromPresenceState,
+        sameUser,
+        includesUser,
+        ensureRoomDjAssigned,
+        fetchActiveUsersInRoom,
+        pruneInactiveRooms,
+        updateRoomActivity,
+        fetchActiveRooms,
+        patchRadioRoomByName,
+        deleteRadioRoomByName,
+        upsertRadioRoom,
+        cleanupDepartedRoom
+    } = roomService;
+
+    const playerService = PlayerServiceModule.createPlayerService({
+        supabaseUrl: SUPABASE_URL,
+        supabaseKey: SUPABASE_KEY,
+        listenerSyncDriftThresholdSeconds: LISTENER_SYNC_DRIFT_THRESHOLD_SECONDS,
+        sameUser,
+        updateRoomActivity,
+        initSupabaseRealtime: () => initSupabaseRealtime(),
+        leaveRoom: (options) => leaveRoom(options),
+        getCityRadioChannel: () => cityRadioChannel,
+        getCurrentRoom: () => currentRoom,
+        getCurrentRoomData: () => currentRoomData,
+        setCurrentRoomData: (next) => {
+            currentRoomData = next;
+        },
+        getCurrentUser: () => currentUser,
+        getCurrentPlayingVideoId: () => currentPlayingVideoId,
+        setCurrentPlayingVideoId: (next) => {
+            currentPlayingVideoId = next;
+        },
+        getLastSyncData: () => lastSyncData,
+        setLastSyncData: (next) => {
+            lastSyncData = next;
+        },
+        getLastSyncDataUpdatedAt: () => lastSyncDataUpdatedAt,
+        setLastSyncDataUpdatedAt: (next) => {
+            lastSyncDataUpdatedAt = next;
+        },
+        getYtWindow: () => ytWindow,
+        setYtWindow: (next) => {
+            ytWindow = next;
+        },
+        getYtMessageListenerBound: () => ytMessageListenerBound,
+        setYtMessageListenerBound: (next) => {
+            ytMessageListenerBound = !!next;
+        },
+        getYtStatePollInterval: () => ytStatePollInterval,
+        setYtStatePollInterval: (next) => {
+            ytStatePollInterval = next;
+        },
+        getYtPlayerState: () => ytPlayerState,
+        setYtPlayerState: (next) => {
+            ytPlayerState = next;
+        },
+        getYtLastKnownTime: () => ytLastKnownTime,
+        setYtLastKnownTime: (next) => {
+            ytLastKnownTime = next;
+        },
+        getYtLastKnownTimeUpdatedAt: () => ytLastKnownTimeUpdatedAt,
+        setYtLastKnownTimeUpdatedAt: (next) => {
+            ytLastKnownTimeUpdatedAt = next;
+        },
+        getCurrentVideoTitle: () => currentVideoTitle,
+        setCurrentVideoTitle: (next) => {
+            currentVideoTitle = next;
+        },
+        getVideoTitleById: () => videoTitleById,
+        getDjPlaybackStartTimeMs: () => djPlaybackStartTimeMs,
+        setDjPlaybackStartTimeMs: (next) => {
+            djPlaybackStartTimeMs = next;
+        },
+        getDjLastObservedPlayerTime: () => djLastObservedPlayerTime,
+        setDjLastObservedPlayerTime: (next) => {
+            djLastObservedPlayerTime = next;
+        },
+        getDjLastObservedAtMs: () => djLastObservedAtMs,
+        setDjLastObservedAtMs: (next) => {
+            djLastObservedAtMs = next;
+        },
+        getDjLastSeekBroadcastAtMs: () => djLastSeekBroadcastAtMs,
+        setDjLastSeekBroadcastAtMs: (next) => {
+            djLastSeekBroadcastAtMs = next;
+        },
+        getDjLastStateBroadcastAtMs: () => djLastStateBroadcastAtMs,
+        setDjLastStateBroadcastAtMs: (next) => {
+            djLastStateBroadcastAtMs = next;
         }
-    }
+    });
 
-    async function removeCurrentUserRoomPresence(options = {}) {
-        const keepalive = !!options.keepalive;
-        if (!currentUser) return false;
-        if (!getPin()) return false;
-        try {
-            const response = await fetch(`${SUPABASE_URL}/rest/v1/users?username=eq.${encodeURIComponent(currentUser)}`, {
-                method: 'PATCH',
-                keepalive,
-                headers: buildSupabaseAuthHeaders({
-                    "Content-Type": "application/json",
-                    "Prefer": "return=minimal"
-                }),
-                body: JSON.stringify({
-                    current_room: 'Lobby',
-                    last_seen: new Date().toISOString()
-                })
-            });
-            return response.ok;
-        } catch (e) {
-            return false;
-        }
-    }
+    const {
+        stopMusic,
+        ensureRoomPlayerWindowOpen,
+        broadcastVideo,
+        handleRadioSync,
+        handleRadioSyncRequest,
+        manualResync,
+        extractVideoId,
+        isCurrentUserDj
+    } = playerService;
 
-    async function fetchRoomPresenceCountMap() {
-        const map = {};
-        try {
-            const response = await fetch(`${SUPABASE_URL}/rest/v1/users_room_presence_counts?select=room_name,total_count,admin_count,user_count`, {
-                headers: {
-                    "apikey": SUPABASE_KEY,
-                    "Authorization": `Bearer ${SUPABASE_KEY}`,
-                    "Accept": "application/json"
-                }
-            });
-            if (!response.ok) return map;
-
-            const rows = await response.json();
-            rows.forEach(row => {
-                map[row.room_name] = {
-                    total: Number(row.total_count) || 0,
-                    admins: Number(row.admin_count) || 0,
-                    users: Number(row.user_count) || 0
-                };
-            });
-        } catch (e) {
-            console.warn("[HabboCityEmoji] Failed to fetch room presence counts:", e);
-        }
-        return map;
-    }
-
-    function pickOldestUserFromPresenceState(state, excludeUser = null, allowedUsers = null) {
-        const normalizedExclude = String(excludeUser || '').trim().toLowerCase();
-        const allowedSet = Array.isArray(allowedUsers) && allowedUsers.length
-            ? new Set(
-                allowedUsers
-                    .map(user => String(user || '').trim().toLowerCase())
-                    .filter(Boolean)
-            )
-            : null;
-
-        const candidates = [];
-        Object.entries(state || {}).forEach(([username, metas]) => {
-            const normalizedUsername = String(username || '').trim().toLowerCase();
-            if (!normalizedUsername) return;
-            if (normalizedExclude && normalizedUsername === normalizedExclude) return;
-            if (allowedSet && !allowedSet.has(normalizedUsername)) return;
-
-            const metaArray = Array.isArray(metas) ? metas : [];
-            const validTimes = metaArray
-                .map(meta => new Date(meta?.online_at || 0).getTime())
-                .filter(Number.isFinite);
-            const onlineAt = validTimes.length ? Math.min(...validTimes) : Number.MAX_SAFE_INTEGER;
-
-            candidates.push({
-                username: String(username).trim(),
-                onlineAt
-            });
-        });
-
-        candidates.sort((a, b) => a.onlineAt - b.onlineAt || a.username.localeCompare(b.username));
-        return candidates[0]?.username || null;
-    }
-
-    function sameUser(a, b) {
-        if (!a || !b) return false;
-        return String(a).trim().toLowerCase() === String(b).trim().toLowerCase();
-    }
-
-    function includesUser(users, user) {
-        if (!Array.isArray(users) || !user) return false;
-        return users.some(name => sameUser(name, user));
-    }
-
-    async function ensureRoomDjAssigned(roomName, roomData = null, presenceState = null, activeUsers = null) {
-        const normalizedRoom = normalizeRoomName(roomName);
-        if (!normalizedRoom || normalizedRoom === 'Lobby') return null;
-        if (!currentUser || !getPin()) return null;
-
-        const users = Array.isArray(activeUsers) ? activeUsers.filter(Boolean) : await fetchActiveUsersInRoom(normalizedRoom);
-        if (!users.length) return null;
-
-        const currentDj = roomData?.current_dj || null;
-        if (currentDj && includesUser(users, currentDj)) {
-            return currentDj;
-        }
-
-        const nextDj = pickOldestUserFromPresenceState(presenceState || {}, null, users) || users[0];
-        if (!nextDj) return null;
-
-        const updated = await patchRadioRoomByName(normalizedRoom, {
-            current_dj: nextDj,
-            last_activity: new Date().toISOString()
-        });
-        if (!updated) return null;
-
-        if (roomData) roomData.current_dj = nextDj;
-        return nextDj;
-    }
-
-    async function fetchActiveUsersInRoom(roomName) {
-        if (!roomName || roomName === 'Lobby') return [];
-        try {
-            const cutoff = new Date(Date.now() - ROOM_ACTIVE_PRESENCE_WINDOW_MS).toISOString();
-            const resp = await fetch(
-                `${SUPABASE_URL}/rest/v1/users?current_room=eq.${encodeURIComponent(roomName)}&last_seen=gt.${cutoff}&select=username,created_at&order=created_at.asc`,
-                {
-                    headers: {
-                        "apikey": SUPABASE_KEY,
-                        "Authorization": `Bearer ${SUPABASE_KEY}`,
-                        "Accept": "application/json"
-                    }
-                }
-            );
-            if (!resp.ok) return [];
-            const rows = await resp.json();
-            return (rows || []).map(row => row.username).filter(Boolean);
-        } catch (e) {
-            console.warn("[HabboCityEmoji] Failed to fetch active room users:", e);
-            return [];
-        }
-    }
-
-    async function pruneInactiveRooms(options = {}) {
-        const force = !!options.force;
-        if (!currentUser || !getPin()) return 0;
-        const now = Date.now();
-        if (!force && now - lastRoomPruneAttemptAtMs < ROOM_PRUNE_COOLDOWN_MS) {
-            return 0;
-        }
-        lastRoomPruneAttemptAtMs = now;
-
-        try {
-            const response = await fetch(
-                `${SUPABASE_URL}/rest/v1/radio_rooms?select=name,last_activity&order=last_activity.asc&limit=${ROOM_PRUNE_BATCH_SIZE}`,
-                {
-                    headers: {
-                        "apikey": SUPABASE_KEY,
-                        "Authorization": `Bearer ${SUPABASE_KEY}`,
-                        "Accept": "application/json"
-                    }
-                }
-            );
-            if (!response.ok) return 0;
-
-            const rows = await response.json();
-            const presenceCounts = await fetchRoomPresenceCountMap();
-            const candidates = Array.isArray(rows) ? rows : [];
-            let deletedCount = 0;
-            for (const row of candidates) {
-                const roomName = normalizeRoomName(row?.name);
-                if (!roomName || roomName === 'Lobby' || roomName === currentRoom) continue;
-                const activeCount = Number(presenceCounts[roomName]?.total) || 0;
-                if (activeCount > 0) continue;
-
-                const lastActivityMs = new Date(row?.last_activity || 0).getTime();
-                const isRecent = Number.isFinite(lastActivityMs) && (now - lastActivityMs < ROOM_EMPTY_PRUNE_GRACE_MS);
-                if (!force && isRecent) continue;
-
-                const deleted = await deleteRadioRoomByName(roomName);
-                if (deleted) deletedCount += 1;
-            }
-            return deletedCount;
-        } catch (e) {
-            return 0;
-        }
-    }
-
-    /**
-     * Initializes Supabase Realtime with Room support
-     */
     function initSupabaseRealtime() {
         if (!supabaseClient) {
             supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -2061,157 +1659,6 @@
         }
     }
 
-    async function updateRoomActivity(videoId = null, startedAtIso = null, playbackSnapshot = null) {
-        if (!currentRoom || currentRoom === 'Lobby') return;
-        if (!currentUser || !getPin()) return;
-
-        const updateData = {
-            name: currentRoom,
-            last_activity: new Date().toISOString()
-        };
-        if (videoId) {
-            updateData.current_video_id = videoId;
-            updateData.current_video_started_at = startedAtIso || new Date().toISOString();
-        }
-        if (currentUser && (videoId || isCurrentUserDj())) {
-            updateData.current_dj = currentUser;
-        }
-        if (playbackSnapshot) {
-            if (Number.isFinite(playbackSnapshot.positionSeconds)) {
-                updateData.current_video_position_seconds = Math.max(0, playbackSnapshot.positionSeconds);
-            }
-            if (Number.isFinite(playbackSnapshot.positionCapturedAt)) {
-                updateData.current_video_position_updated_at = new Date(playbackSnapshot.positionCapturedAt).toISOString();
-            }
-            if (typeof playbackSnapshot.isPlaying === 'boolean') {
-                updateData.current_video_is_playing = playbackSnapshot.isPlaying;
-            }
-        }
-
-        try {
-            await fetch(`${SUPABASE_URL}/rest/v1/radio_rooms?on_conflict=name`, {
-                method: 'POST',
-                headers: buildSupabaseAuthHeaders({
-                    "Content-Type": "application/json",
-                    "Prefer": "resolution=merge-duplicates"
-                }),
-                body: JSON.stringify(updateData)
-            });
-        } catch (e) {
-            console.warn("[HabboCityEmoji] Failed to update room activity:", e);
-        }
-    }
-
-    async function fetchActiveRooms() {
-        try {
-            const response = await fetch(`${SUPABASE_URL}/rest/v1/radio_rooms?select=*&order=last_activity.desc&limit=100`, {
-                headers: {
-                    "apikey": SUPABASE_KEY,
-                    "Authorization": `Bearer ${SUPABASE_KEY}`
-                }
-            });
-            if (response.ok) return await response.json();
-        } catch (e) {
-            console.error("[HabboCityEmoji] Error fetching rooms:", e);
-        }
-        return [];
-    }
-
-    async function patchRadioRoomByName(roomName, patchData, options = {}) {
-        const keepalive = !!options.keepalive;
-        if (!roomName || !patchData) return false;
-        try {
-            const response = await fetch(`${SUPABASE_URL}/rest/v1/radio_rooms?name=eq.${encodeURIComponent(roomName)}`, {
-                method: 'PATCH',
-                keepalive,
-                headers: buildSupabaseAuthHeaders({
-                    "Content-Type": "application/json",
-                    "Prefer": "return=minimal"
-                }),
-                body: JSON.stringify(patchData)
-            });
-            return response.ok;
-        } catch (e) {
-            return false;
-        }
-    }
-
-    async function deleteRadioRoomByName(roomName, options = {}) {
-        const keepalive = !!options.keepalive;
-        if (!roomName) return false;
-        try {
-            const response = await fetch(`${SUPABASE_URL}/rest/v1/radio_rooms?name=eq.${encodeURIComponent(roomName)}`, {
-                method: 'DELETE',
-                keepalive,
-                headers: buildSupabaseAuthHeaders({
-                    "Prefer": "return=minimal"
-                })
-            });
-            return response.ok;
-        } catch (e) {
-            return false;
-        }
-    }
-
-    async function upsertRadioRoom(roomData) {
-        try {
-            const response = await fetch(`${SUPABASE_URL}/rest/v1/radio_rooms?on_conflict=name`, {
-                method: 'POST',
-                headers: buildSupabaseAuthHeaders({
-                    "Content-Type": "application/json",
-                    "Prefer": "resolution=merge-duplicates,return=representation"
-                }),
-                body: JSON.stringify(roomData)
-            });
-            if (!response.ok) return null;
-            const rows = await response.json();
-            return Array.isArray(rows) ? rows[0] || null : rows;
-        } catch (e) {
-            return null;
-        }
-    }
-
-    async function cleanupDepartedRoom(roomName, options = {}) {
-        const keepalive = !!options.keepalive;
-        const wasDj = !!options.wasDj;
-        const presenceState = options.presenceState || {};
-        const roomData = options.roomData || null;
-        const normalizedRoom = normalizeRoomName(roomName);
-        if (!normalizedRoom || normalizedRoom === 'Lobby') return;
-
-        // Page unload path: do a best-effort direct delete after moving self to Lobby.
-        // If other users are still active, RLS will reject deletion.
-        if (keepalive) {
-            await deleteRadioRoomByName(normalizedRoom, { keepalive: true });
-            return;
-        }
-
-        let remainingUsers = await fetchActiveUsersInRoom(normalizedRoom);
-        if (!keepalive && includesUser(remainingUsers, currentUser)) {
-            await sleep(700);
-            remainingUsers = await fetchActiveUsersInRoom(normalizedRoom);
-        }
-        const oldestRealtime = pickOldestUserFromPresenceState(presenceState, currentUser, remainingUsers);
-
-        if (remainingUsers.length <= 0) {
-            await deleteRadioRoomByName(normalizedRoom, { keepalive });
-            return;
-        }
-
-        if (wasDj) {
-            const newDj = oldestRealtime || remainingUsers[0];
-            if (newDj) {
-                await patchRadioRoomByName(normalizedRoom, {
-                    current_dj: newDj,
-                    last_activity: new Date().toISOString()
-                }, { keepalive });
-            }
-            return;
-        }
-
-        await ensureRoomDjAssigned(normalizedRoom, roomData, presenceState, remainingUsers);
-    }
-
     async function changeRoom(newRoom) {
         try {
             const normalizedRoom = normalizeRoomName(newRoom);
@@ -2298,60 +1745,17 @@
         if (!skipPanelRefresh) refreshRadioPanel();
     }
 
-    function stopMusic() {
-        const mount = document.getElementById('yt-player-mount');
-        if (mount) mount.innerHTML = '';
-        if (window._radioSyncInterval) {
-            clearInterval(window._radioSyncInterval);
-            window._radioSyncInterval = null;
+    // Keep room rows alive while users are in-room, even without an active player window.
+    setInterval(() => {
+        if (currentRoom && currentRoom !== 'Lobby') {
+            updateRoomActivity();
         }
-        if (ytStatePollInterval) {
-            clearInterval(ytStatePollInterval);
-            ytStatePollInterval = null;
-        }
-        ytPlayerState = -1;
-        ytLastKnownTime = 0;
-        ytLastKnownTimeUpdatedAt = 0;
-        currentVideoTitle = '';
-        djPlaybackStartTimeMs = 0;
-        djLastObservedPlayerTime = null;
-        djLastObservedAtMs = 0;
-        djLastSeekBroadcastAtMs = 0;
-        if (ytWindow) {
-            ytWindow.classList.remove('active');
-            updatePlayerWindowTitle('Ready');
-        }
-    }
+    }, 60000);
 
-    function ensureRoomPlayerWindowOpen() {
-        if (!currentRoom || currentRoom === 'Lobby') return false;
-        createPlayerWindow();
-        if (!ytWindow) return false;
-        ytWindow.classList.add('active');
-        updatePlayerWindowTitle();
-        return true;
-    }
-
-    function getDisplayRoomName() {
-        const room = (currentRoomData && currentRoomData.name) || currentRoom || 'Lobby';
-        const clean = String(room || '').trim();
-        return clean || 'Lobby';
-    }
-
-    function normalizeVideoTitle(raw) {
-        const text = String(raw || '').replace(/\s+/g, ' ').trim();
-        return text || 'Video';
-    }
-
-    function updatePlayerWindowTitle(videoTitle = null) {
-        if (!ytWindow) return;
-        const titleEl = ytWindow.querySelector('.yt-player-title');
-        if (!titleEl) return;
-
-        const roomName = getDisplayRoomName();
-        const finalTitle = normalizeVideoTitle(videoTitle != null ? videoTitle : currentVideoTitle);
-        titleEl.innerText = `[${roomName}] ${finalTitle}`;
-    }
+    // Opportunistic cleanup for stale rows that are no longer occupied.
+    setInterval(() => {
+        pruneInactiveRooms().catch(() => { });
+    }, ROOM_PRUNE_INTERVAL_MS);
 
     function refreshRadioPanel() {
         if (!radioPanel) return;
@@ -2359,342 +1763,6 @@
         renderMusicTab();
     }
 
-    /**
-     * Broadcasts a video state to all users
-     */
-    function broadcastVideo(videoId) {
-        if (!isCurrentUserDj()) return;
-        if (!isValidYoutubeVideoId(videoId)) return;
-        if (!cityRadioChannel) {
-            initSupabaseRealtime();
-        }
-
-        // IMMEDIATELY play locally for the sender
-        currentPlayingVideoId = videoId;
-        currentVideoTitle = videoTitleById[videoId] || 'Loading...';
-        djPlaybackStartTimeMs = Date.now();
-        djLastObservedPlayerTime = 0;
-        djLastObservedAtMs = Date.now();
-        initYoutubePlayer(videoId, 0);
-        updatePlayerWindowTitle();
-        sendRadioSync(videoId, 'start');
-
-        // Update database room state
-        updateRoomActivity(videoId);
-
-        // Clear legacy sync interval; active sync is handled by player-state polling.
-        if (window._radioSyncInterval) {
-            clearInterval(window._radioSyncInterval);
-            window._radioSyncInterval = null;
-        }
-    }
-
-    function getTargetTimeFromSyncSnapshot(snapshot) {
-        if (!snapshot) return null;
-        const now = Date.now();
-
-        const basePositionRaw =
-            snapshot.positionSeconds ??
-            snapshot.current_video_position_seconds ??
-            snapshot.currentTime;
-
-        const basePosition = Number(basePositionRaw);
-        if (Number.isFinite(basePosition)) {
-            let target = Math.max(0, basePosition);
-
-            const capturedRaw =
-                snapshot.positionCapturedAt ??
-                snapshot.position_captured_at ??
-                snapshot.current_video_position_updated_at;
-
-            let capturedAtMs = null;
-            if (Number.isFinite(capturedRaw)) {
-                capturedAtMs = Number(capturedRaw);
-            } else if (capturedRaw) {
-                const parsed = new Date(capturedRaw).getTime();
-                if (Number.isFinite(parsed)) {
-                    capturedAtMs = parsed;
-                }
-            }
-
-            const isPlayingRaw = snapshot.isPlaying ?? snapshot.current_video_is_playing;
-            const isPlaying = typeof isPlayingRaw === 'boolean' ? isPlayingRaw : true;
-            if (isPlaying && Number.isFinite(capturedAtMs)) {
-                target += Math.max(0, (now - capturedAtMs) / 1000);
-            }
-
-            if (!Number.isFinite(capturedAtMs)) {
-                const startRaw = snapshot.startTime ?? snapshot.current_video_started_at;
-                let startAtMs = null;
-                if (Number.isFinite(startRaw)) {
-                    startAtMs = Number(startRaw);
-                } else if (startRaw) {
-                    const parsedStart = new Date(startRaw).getTime();
-                    if (Number.isFinite(parsedStart)) {
-                        startAtMs = parsedStart;
-                    }
-                }
-                if (Number.isFinite(startAtMs) && isPlaying) {
-                    const inferredCapturedAtMs = startAtMs + (target * 1000);
-                    target += Math.max(0, (now - inferredCapturedAtMs) / 1000);
-                }
-            }
-
-            return Math.max(0, target);
-        }
-
-        const startRaw = snapshot.startTime ?? snapshot.current_video_started_at;
-        let startAtMs = null;
-        if (Number.isFinite(startRaw)) {
-            startAtMs = Number(startRaw);
-        } else if (startRaw) {
-            const parsed = new Date(startRaw).getTime();
-            if (Number.isFinite(parsed)) {
-                startAtMs = parsed;
-            }
-        }
-
-        if (Number.isFinite(startAtMs)) {
-            return Math.max(0, (now - startAtMs) / 1000);
-        }
-
-        return null;
-    }
-
-    function syncToDjNow() {
-        const isPlayerOpen = !!(ytWindow && ytWindow.classList.contains('active'));
-        const seekInPlace = (videoId, elapsed, shouldPlay = true) => {
-            if (isPlayerOpen && currentPlayingVideoId === videoId && document.getElementById('yt-player-iframe')) {
-                const localTime = getEstimatedPlayerTime();
-                const shouldSeek =
-                    !Number.isFinite(localTime) ||
-                    Math.abs(localTime - elapsed) > LISTENER_SYNC_DRIFT_THRESHOLD_SECONDS;
-                if (shouldSeek) {
-                    sendPlayerCommand('seekTo', [Math.max(0, elapsed), true]);
-                }
-                if (shouldPlay) {
-                    sendPlayerCommand('playVideo');
-                    setTimeout(() => sendPlayerCommand('playVideo'), 180);
-                } else {
-                    sendPlayerCommand('pauseVideo');
-                    setTimeout(() => sendPlayerCommand('pauseVideo'), 120);
-                }
-            } else {
-                currentPlayingVideoId = videoId;
-                initYoutubePlayer(videoId, elapsed);
-                setTimeout(() => {
-                    sendPlayerCommand('seekTo', [Math.max(0, elapsed), true]);
-                    if (shouldPlay) {
-                        sendPlayerCommand('playVideo');
-                    } else {
-                        sendPlayerCommand('pauseVideo');
-                    }
-                }, 250);
-            }
-        };
-
-        if (lastSyncData && isValidYoutubeVideoId(lastSyncData.videoId)) {
-            if (typeof lastSyncData.videoTitle === 'string' && lastSyncData.videoTitle.trim()) {
-                currentVideoTitle = normalizeVideoTitle(lastSyncData.videoTitle);
-                videoTitleById[lastSyncData.videoId] = currentVideoTitle;
-            }
-            const elapsed = getTargetTimeFromSyncSnapshot(lastSyncData);
-            if (Number.isFinite(elapsed)) {
-                const syncIsPlaying = typeof lastSyncData.isPlaying === 'boolean' ? lastSyncData.isPlaying : true;
-                seekInPlace(lastSyncData.videoId, elapsed, syncIsPlaying);
-                return true;
-            }
-        }
-
-        if (currentRoomData && isValidYoutubeVideoId(currentRoomData.current_video_id)) {
-            const elapsed = getTargetTimeFromSyncSnapshot(currentRoomData);
-            if (Number.isFinite(elapsed)) {
-                const syncIsPlaying = typeof currentRoomData.current_video_is_playing === 'boolean'
-                    ? currentRoomData.current_video_is_playing
-                    : true;
-                seekInPlace(currentRoomData.current_video_id, elapsed, syncIsPlaying);
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    function requestLiveDjSync(reason = 'manual') {
-        if (!cityRadioChannel) return false;
-        if (isCurrentUserDj()) return false;
-        cityRadioChannel.send({
-            type: 'broadcast',
-            event: 'radio_sync_request',
-            payload: {
-                requestedBy: currentUser || 'Anonyme',
-                reason: reason,
-                requestedAt: Date.now()
-            }
-        });
-        return true;
-    }
-
-    // Keep room rows alive while users are in-room, even without an active player window.
-    setInterval(() => {
-        if (currentRoom && currentRoom !== 'Lobby') {
-            updateRoomActivity();
-        }
-    }, 60000); // Every minute
-
-    // Opportunistic cleanup for stale rows that are no longer occupied.
-    setInterval(() => {
-        pruneInactiveRooms().catch(() => { });
-    }, ROOM_PRUNE_INTERVAL_MS);
-
-    /**
-     * Handles incoming radio_sync events
-     */
-    function handleRadioSync(data) {
-        const { videoId, startTime, currentTime, positionSeconds, positionCapturedAt, isPlaying, dj, reason, videoTitle } = data;
-        if (!isValidYoutubeVideoId(videoId)) return;
-        lastSyncData = data;
-        lastSyncDataUpdatedAt = Date.now();
-        const elapsed = getTargetTimeFromSyncSnapshot({
-            startTime,
-            currentTime,
-            positionSeconds,
-            positionCapturedAt,
-            isPlaying
-        });
-        const playerIsOpen = !!(ytWindow && ytWindow.classList.contains('active'));
-
-        console.log(`[HabboCityEmoji] Sync Event: ${videoId} from ${dj} (${reason || 'state'}) -> ${Number.isFinite(elapsed) ? elapsed.toFixed(2) : 'n/a'}s`);
-
-        // DJ PRIORITY: If I am the DJ, I source the sync, I never follow it
-        if (currentRoomData && sameUser(currentRoomData.current_dj, currentUser)) {
-            return;
-        }
-
-        currentPlayingVideoId = videoId;
-        if (typeof videoTitle === 'string' && videoTitle.trim()) {
-            currentVideoTitle = normalizeVideoTitle(videoTitle);
-            videoTitleById[videoId] = currentVideoTitle;
-        } else if (videoTitleById[videoId]) {
-            currentVideoTitle = videoTitleById[videoId];
-        } else if (!currentVideoTitle) {
-            currentVideoTitle = 'Loading...';
-        }
-        if (currentRoomData) {
-            currentRoomData.current_video_id = videoId;
-            if (startTime) {
-                currentRoomData.current_video_started_at = new Date(startTime).toISOString();
-            }
-            const roomPosition = Number.isFinite(positionSeconds) ? positionSeconds : currentTime;
-            if (Number.isFinite(roomPosition)) {
-                currentRoomData.current_video_position_seconds = Math.max(0, roomPosition);
-            }
-            if (Number.isFinite(positionCapturedAt)) {
-                currentRoomData.current_video_position_updated_at = new Date(positionCapturedAt).toISOString();
-            } else {
-                currentRoomData.current_video_position_updated_at = new Date().toISOString();
-            }
-            if (typeof isPlaying === 'boolean') {
-                currentRoomData.current_video_is_playing = isPlaying;
-            }
-        }
-
-        // Player is mandatory in-room. If it is closed, exit the room.
-        if (!playerIsOpen) {
-            const playerWindowClosed = !ytWindow || !document.body.contains(ytWindow);
-            if (playerWindowClosed && currentRoom && currentRoom !== 'Lobby') {
-                leaveRoom().catch(() => { });
-            }
-            return;
-        }
-
-        syncToDjNow();
-        updatePlayerWindowTitle();
-    }
-
-    function handleRadioSyncRequest(data) {
-        if (!isCurrentUserDj()) return;
-        if (!currentPlayingVideoId) return;
-        if (!data || data.requestedBy === currentUser) return;
-        sendPlayerCommand('getCurrentTime');
-        sendPlayerCommand('getPlayerState');
-        setTimeout(() => {
-            if (!isCurrentUserDj() || !currentPlayingVideoId) return;
-            sendRadioSync(currentPlayingVideoId, 'manual_response');
-        }, 150);
-    }
-
-    function manualResync(options = {}) {
-        const silent = !!options.silent;
-        const reason = typeof options.reason === 'string' && options.reason.trim()
-            ? options.reason.trim()
-            : 'manual';
-        if (isCurrentUserDj()) return false;
-        (async () => {
-            const beforeRequestSyncAt = lastSyncDataUpdatedAt;
-            const requested = requestLiveDjSync(reason);
-            if (requested) {
-                const waitUntil = Date.now() + 1800;
-                while (Date.now() < waitUntil) {
-                    if (lastSyncData && lastSyncDataUpdatedAt > beforeRequestSyncAt) {
-                        break;
-                    }
-                    await new Promise(resolve => setTimeout(resolve, 120));
-                }
-            }
-
-            try {
-                if (currentRoom && currentRoom !== 'Lobby') {
-                    const resp = await fetch(`${SUPABASE_URL}/rest/v1/radio_rooms?name=eq.${encodeURIComponent(currentRoom)}&select=*`, {
-                        headers: {
-                            "apikey": SUPABASE_KEY,
-                            "Authorization": `Bearer ${SUPABASE_KEY}`,
-                            "Accept": "application/json"
-                        }
-                    });
-                    if (resp.ok) {
-                        const rows = await resp.json();
-                        if (rows && rows[0]) currentRoomData = rows[0];
-                    }
-                }
-            } catch (e) { }
-
-            if (
-                (!lastSyncData || lastSyncDataUpdatedAt <= beforeRequestSyncAt) &&
-                currentRoomData?.current_video_id &&
-                (currentRoomData?.current_video_started_at || Number.isFinite(Number(currentRoomData?.current_video_position_seconds)))
-            ) {
-                const dbPosition = Number(currentRoomData.current_video_position_seconds);
-                const dbPositionUpdatedAt = currentRoomData.current_video_position_updated_at
-                    ? new Date(currentRoomData.current_video_position_updated_at).getTime()
-                    : Date.now();
-                lastSyncData = {
-                    videoId: currentRoomData.current_video_id,
-                    startTime: currentRoomData.current_video_started_at
-                        ? new Date(currentRoomData.current_video_started_at).getTime()
-                        : Date.now(),
-                    currentTime: Number.isFinite(dbPosition) ? dbPosition : undefined,
-                    positionSeconds: Number.isFinite(dbPosition) ? dbPosition : undefined,
-                    positionCapturedAt: dbPositionUpdatedAt,
-                    isPlaying: typeof currentRoomData.current_video_is_playing === 'boolean'
-                        ? currentRoomData.current_video_is_playing
-                        : true,
-                    reason: reason,
-                    dj: currentRoomData.current_dj || 'DJ'
-                };
-                lastSyncDataUpdatedAt = Date.now();
-            }
-
-            if (!syncToDjNow() && !silent) {
-                alert("No sync data received yet.");
-            }
-        })();
-        return true;
-    }
-
-    /**
-     * Renders the Music Tab for DJing
-     */
     async function renderMusicTab() {
         if (!currentUser) {
             renderIdentityTab();
@@ -3036,391 +2104,6 @@
         }
     }
 
-    function isValidYoutubeVideoId(videoId) {
-        return /^[A-Za-z0-9_-]{11}$/.test(String(videoId || '').trim());
-    }
-
-    function extractVideoId(url) {
-        const raw = String(url || '').trim();
-        if (isValidYoutubeVideoId(raw)) return raw;
-        const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
-        const match = raw.match(regExp);
-        const candidate = match ? match[2] : null;
-        return isValidYoutubeVideoId(candidate) ? candidate : null;
-    }
-
-    /**
-     * Floating Player UI (Completely Rebuilt)
-     */
-    function createPlayerWindow() {
-        // Singleton check
-        if (ytWindow && document.body.contains(ytWindow)) return;
-        if (ytWindow && !document.body.contains(ytWindow)) ytWindow = null;
-
-        // Create player window
-        ytWindow = document.createElement('div');
-        ytWindow.className = 'yt-player-window';
-        ytWindow.style.cssText = 'position:fixed; left:100px; top:100px; width:560px; height:360px; z-index:999999;';
-
-        ytWindow.innerHTML = `
-        <div class="yt-player-header" style="cursor:move; user-select:none;">
-            <span class="yt-player-title">[Lobby] Ready</span>
-            <div class="yt-control-btn" id="yt-close-win">X</div>
-        </div>
-        <div class="yt-player-content">
-            <div id="yt-player-mount" style="width:100%; height:100%; pointer-events:auto;"></div>
-            <div class="yt-player-overlay"></div>
-        </div>
-        <div class="yt-resize-handle" style="cursor:nwse-resize; user-select:none;"></div>
-    `;
-        document.body.appendChild(ytWindow);
-
-        const header = ytWindow.querySelector('.yt-player-header');
-        const resizeHandle = ytWindow.querySelector('.yt-resize-handle');
-        const closeBtn = ytWindow.querySelector('#yt-close-win');
-        const overlay = ytWindow.querySelector('.yt-player-overlay');
-
-        const setInteractionOverlay = (active) => {
-            if (!overlay) return;
-            overlay.classList.toggle('active', active);
-        };
-
-        // Drag variables
-        let isDragging = false;
-        let dragStartX = 0;
-        let dragStartY = 0;
-        let windowStartX = 0;
-        let windowStartY = 0;
-
-        // Resize variables
-        let isResizing = false;
-        let resizeStartX = 0;
-        let resizeStartY = 0;
-        let windowStartW = 0;
-        let windowStartH = 0;
-
-        const onMouseMove = (e) => {
-            if (!ytWindow) return;
-
-            if (isDragging) {
-                const dx = e.clientX - dragStartX;
-                const dy = e.clientY - dragStartY;
-
-                ytWindow.style.left = (windowStartX + dx) + 'px';
-                ytWindow.style.top = (windowStartY + dy) + 'px';
-            }
-
-            if (isResizing) {
-                const dx = e.clientX - resizeStartX;
-                const dy = e.clientY - resizeStartY;
-
-                const newW = Math.max(300, windowStartW + dx);
-                const newH = Math.max(200, windowStartH + dy);
-
-                ytWindow.style.width = newW + 'px';
-                ytWindow.style.height = newH + 'px';
-            }
-        };
-
-        const onMouseUp = () => {
-            if (isDragging || isResizing) {
-                isDragging = false;
-                isResizing = false;
-                setInteractionOverlay(false);
-            }
-        };
-
-        // Close button
-        closeBtn.onclick = (e) => {
-            e.stopPropagation();
-            const shouldLeaveRoom = !!(currentRoom && currentRoom !== 'Lobby');
-            window.removeEventListener('mousemove', onMouseMove, true);
-            window.removeEventListener('mouseup', onMouseUp, true);
-            ytWindow.remove();
-            ytWindow = null;
-            if (shouldLeaveRoom) {
-                leaveRoom().catch(() => { });
-            } else {
-                stopMusic();
-            }
-        };
-
-        // DRAG: Mouse down on header
-        header.addEventListener('mousedown', function (e) {
-            if (e.target.closest('.yt-control-btn')) return;
-            e.preventDefault();
-
-            isDragging = true;
-            dragStartX = e.clientX;
-            dragStartY = e.clientY;
-
-            const rect = ytWindow.getBoundingClientRect();
-            windowStartX = rect.left;
-            windowStartY = rect.top;
-            setInteractionOverlay(true);
-        });
-
-        // RESIZE: Mouse down on resize handle
-        resizeHandle.addEventListener('mousedown', function (e) {
-            e.preventDefault();
-            e.stopPropagation();
-
-            isResizing = true;
-            resizeStartX = e.clientX;
-            resizeStartY = e.clientY;
-
-            windowStartW = ytWindow.offsetWidth;
-            windowStartH = ytWindow.offsetHeight;
-            setInteractionOverlay(true);
-        });
-
-        window.addEventListener('mousemove', onMouseMove, true);
-        window.addEventListener('mouseup', onMouseUp, true);
-    }
-
-
-    /**
-     * YouTube API Management via direct Iframe (CSP Safe)
-     */
-    function getYoutubeTargetOrigin(iframe) {
-        if (!iframe?.src) return null;
-        try {
-            const origin = new URL(iframe.src).origin;
-            if (origin === 'https://www.youtube.com' || origin === 'https://www.youtube-nocookie.com') {
-                return origin;
-            }
-        } catch (e) { }
-        return null;
-    }
-
-    function sendPlayerCommand(func, args = []) {
-        const iframe = document.getElementById('yt-player-iframe');
-        if (!iframe) return;
-        const targetOrigin = getYoutubeTargetOrigin(iframe);
-        if (!targetOrigin || !iframe.contentWindow) return;
-        iframe.contentWindow.postMessage(JSON.stringify({
-            event: 'command',
-            func: func,
-            args: args
-        }), targetOrigin);
-    }
-
-    function initYoutubePlayer(videoId, seekTo = 0) {
-        createPlayerWindow();
-        ytWindow.classList.add('active');
-        if (videoTitleById[videoId]) {
-            currentVideoTitle = videoTitleById[videoId];
-        } else if (!currentVideoTitle) {
-            currentVideoTitle = 'Loading...';
-        }
-        updatePlayerWindowTitle();
-        mountPlayer(videoId, seekTo);
-    }
-
-    function isCurrentUserDj() {
-        if (!currentRoomData || !currentUser || !currentRoomData.current_dj) return false;
-        return String(currentRoomData.current_dj).trim().toLowerCase() === String(currentUser).trim().toLowerCase();
-    }
-
-    function getEstimatedPlayerTime() {
-        if (!Number.isFinite(ytLastKnownTime) || ytLastKnownTimeUpdatedAt <= 0) {
-            return null;
-        }
-        if (ytPlayerState === 1) {
-            return Math.max(0, ytLastKnownTime + ((Date.now() - ytLastKnownTimeUpdatedAt) / 1000));
-        }
-        return Math.max(0, ytLastKnownTime);
-    }
-
-    function buildDjPlaybackSnapshot(overrideTime = null) {
-        const now = Date.now();
-        let playerTime = Number.isFinite(overrideTime) ? overrideTime : getEstimatedPlayerTime();
-
-        if (!Number.isFinite(playerTime) && Number.isFinite(djLastObservedPlayerTime)) {
-            if (ytPlayerState === 1 && djLastObservedAtMs > 0) {
-                playerTime = Math.max(0, djLastObservedPlayerTime + ((now - djLastObservedAtMs) / 1000));
-            } else {
-                playerTime = Math.max(0, djLastObservedPlayerTime);
-            }
-        }
-
-        if (!Number.isFinite(playerTime) && djPlaybackStartTimeMs > 0) {
-            playerTime = Math.max(0, (now - djPlaybackStartTimeMs) / 1000);
-        }
-
-        if (!Number.isFinite(playerTime)) {
-            return null;
-        }
-
-        const safeTime = Math.max(0, playerTime);
-        return {
-            positionSeconds: safeTime,
-            positionCapturedAt: now,
-            isPlaying: ytPlayerState !== 2,
-            startTime: Math.round(now - (safeTime * 1000))
-        };
-    }
-
-    function sendRadioSync(videoId, reason = 'state', options = null) {
-        if (!cityRadioChannel || !isCurrentUserDj() || !isValidYoutubeVideoId(videoId)) return;
-        const overrideTime = options && Number.isFinite(options.overrideTime) ? options.overrideTime : null;
-        const snapshot = buildDjPlaybackSnapshot(overrideTime);
-        if (!snapshot) return;
-
-        const payload = {
-            videoId: videoId,
-            startTime: snapshot.startTime,
-            currentTime: snapshot.positionSeconds,
-            positionSeconds: snapshot.positionSeconds,
-            positionCapturedAt: snapshot.positionCapturedAt,
-            isPlaying: snapshot.isPlaying,
-            reason: reason,
-            dj: currentUser || 'Anonyme',
-            videoTitle: normalizeVideoTitle(currentVideoTitle || videoTitleById[videoId] || 'Loading...')
-        };
-        console.log(`[HabboCityEmoji] DJ Sync Out (${reason}): ${payload.positionSeconds.toFixed(2)}s playing=${payload.isPlaying}`);
-        djPlaybackStartTimeMs = payload.startTime;
-        if (currentRoomData) {
-            currentRoomData.current_video_id = videoId;
-            currentRoomData.current_video_started_at = new Date(payload.startTime).toISOString();
-            currentRoomData.current_video_position_seconds = payload.positionSeconds;
-            currentRoomData.current_video_position_updated_at = new Date(payload.positionCapturedAt).toISOString();
-            currentRoomData.current_video_is_playing = payload.isPlaying;
-        }
-        updateRoomActivity(videoId, new Date(payload.startTime).toISOString(), snapshot);
-        cityRadioChannel.send({
-            type: 'broadcast',
-            event: 'radio_sync',
-            payload: payload
-        });
-    }
-
-    function handleDetectedDjSeek(currentTime) {
-        if (!isCurrentUserDj() || !currentPlayingVideoId) return;
-        const now = Date.now();
-        if (now - djLastSeekBroadcastAtMs < 800) return;
-        djPlaybackStartTimeMs = now - (Math.max(0, currentTime) * 1000);
-        sendRadioSync(currentPlayingVideoId, 'seek', { overrideTime: currentTime });
-        djLastSeekBroadcastAtMs = now;
-        djLastStateBroadcastAtMs = now;
-    }
-
-    function ensureYoutubeMessageBridge() {
-        if (ytMessageListenerBound) return;
-        const messageHandler = (event) => {
-            if (event.origin !== "https://www.youtube.com" && event.origin !== "https://www.youtube-nocookie.com") return;
-            const iframe = document.getElementById('yt-player-iframe');
-            if (!iframe || event.source !== iframe.contentWindow) return;
-            let data = event.data;
-
-            if (typeof data === 'string') {
-                try {
-                    data = JSON.parse(data);
-                } catch (e) {
-                    return;
-                }
-            }
-
-            if (!data || typeof data !== 'object') return;
-
-            if (data.event === 'onStateChange' && typeof data.info === 'number') {
-                ytPlayerState = data.info;
-                ytLastKnownTimeUpdatedAt = Date.now();
-                if (isCurrentUserDj() && currentPlayingVideoId) {
-                    sendPlayerCommand('getCurrentTime');
-                }
-                return;
-            }
-
-            if (data.event === 'infoDelivery' && data.info) {
-                if (data.info.videoData && typeof data.info.videoData.title === 'string' && currentPlayingVideoId) {
-                    const nextTitle = normalizeVideoTitle(data.info.videoData.title);
-                    if (nextTitle && nextTitle !== currentVideoTitle) {
-                        currentVideoTitle = nextTitle;
-                        videoTitleById[currentPlayingVideoId] = nextTitle;
-                        updatePlayerWindowTitle(nextTitle);
-                    }
-                }
-                if (typeof data.info.playerState === 'number') {
-                    ytPlayerState = data.info.playerState;
-                }
-                if (typeof data.info.currentTime === 'number') {
-                    const now = Date.now();
-                    ytLastKnownTime = data.info.currentTime;
-                    ytLastKnownTimeUpdatedAt = now;
-                    if (isCurrentUserDj() && currentPlayingVideoId) {
-                        if (Number.isFinite(djLastObservedPlayerTime) && djLastObservedAtMs > 0) {
-                            const elapsedWall = Math.max(0, (now - djLastObservedAtMs) / 1000);
-                            const deltaMedia = data.info.currentTime - djLastObservedPlayerTime;
-                            const expectedDelta = ytPlayerState === 1 ? elapsedWall : 0;
-                            const drift = deltaMedia - expectedDelta;
-                            const jump = Math.abs(drift) >= 1.3 && Math.abs(deltaMedia) >= 0.9;
-                            if (jump) {
-                                handleDetectedDjSeek(data.info.currentTime);
-                            }
-                        }
-                        djPlaybackStartTimeMs = now - (data.info.currentTime * 1000);
-                        djLastObservedPlayerTime = data.info.currentTime;
-                        djLastObservedAtMs = now;
-                        if (now - djLastStateBroadcastAtMs > 1200) {
-                            sendRadioSync(currentPlayingVideoId, 'state');
-                            djLastStateBroadcastAtMs = now;
-                        }
-                    }
-                }
-            }
-        };
-
-        window.addEventListener('message', messageHandler);
-        ytMessageListenerBound = true;
-    }
-
-    function mountPlayer(videoId, seekTo = 0) {
-        if (!isValidYoutubeVideoId(videoId)) return;
-        const container = document.getElementById('yt-player-mount');
-        if (!container) return;
-        currentPlayingVideoId = videoId;
-        updatePlayerWindowTitle();
-
-        // Use direct iframe with minimal params to avoid issues
-        // Autoplay policy often requires mute=1
-        const iframeUrl = `https://www.youtube.com/embed/${videoId}?enablejsapi=1&autoplay=1&mute=1&controls=1&playsinline=1&origin=${encodeURIComponent(window.location.origin)}&start=${Math.floor(seekTo)}`;
-
-        container.innerHTML = `
-            <iframe id="yt-player-iframe" width="100%" height="100%" src="${iframeUrl}" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>
-        `;
-
-        // Attempt automatic unMute/play call
-        setTimeout(() => {
-            const iframe = document.getElementById('yt-player-iframe');
-            const targetOrigin = getYoutubeTargetOrigin(iframe);
-            if (iframe && iframe.contentWindow && targetOrigin) {
-                iframe.contentWindow.postMessage(JSON.stringify({
-                    event: 'listening',
-                    id: 'yt-player-iframe',
-                    channel: 'widget'
-                }), targetOrigin);
-            }
-            sendPlayerCommand('addEventListener', ['onStateChange']);
-            sendPlayerCommand('unMute');
-            sendPlayerCommand('playVideo');
-            sendPlayerCommand('getCurrentTime');
-            sendPlayerCommand('getPlayerState');
-        }, 1200);
-
-        ensureYoutubeMessageBridge();
-        if (ytStatePollInterval) clearInterval(ytStatePollInterval);
-        ytStatePollInterval = setInterval(() => {
-            const now = Date.now();
-            sendPlayerCommand('getCurrentTime');
-            sendPlayerCommand('getPlayerState');
-            if (isCurrentUserDj() && currentPlayingVideoId && now - djLastStateBroadcastAtMs > 1200) {
-                sendRadioSync(currentPlayingVideoId, 'state');
-                djLastStateBroadcastAtMs = now;
-            }
-        }, 400);
-    }
-
     // --- INITIALIZATION ---
 
     async function initExtension() {
@@ -3472,6 +2155,7 @@
     });
 
 })();
+
 
 
 
