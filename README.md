@@ -1,21 +1,41 @@
-# City+
+﻿# City+
 
-Browser extension for HabboCity Nitro chat.
+Extension navigateur pour le chat HabboCity Nitro.
 
-## What it does
+## Fonctionnalités principales
 
-- Adds an emoji/GIF picker next to the chat input.
-- Converts `:code:` tokens (example: `:dance:`) into custom GIFs in chat.
-- Converts supported emoji codes into Twemoji-style images.
-- Syncs GIF data from Supabase so updates are shared across users.
-- Supports user PIN login for contributor/admin actions.
+- Ajoute un sélecteur d'emojis/GIFs à côté du champ de chat.
+- Convertit les codes `:alias:` (exemple: `:dance:`) en GIFs personnalisés dans le chat.
+- Convertit les codes emoji pris en charge en images au style Twemoji.
+- Synchronise les GIFs via Supabase pour partager les mises à jour entre utilisateurs.
+- DJ Room: permet de regarder des vidéos à plusieurs de façon synchronisée, directement depuis HabboCity.
+- Prend en charge une connexion par PIN pour les actions contributeur/admin.
 
-If someone does not have the extension, they still see readable text codes.
+Si une personne n'a pas l'extension, elle voit quand même les codes texte lisibles.
 
-## Install (Chrome/Chromium)
+## Installation depuis une Release GitHub (recommandé)
 
-1. Download or clone this repository.
-2. Open `chrome://extensions`.
-3. Enable **Developer mode**.
-4. Click **Load unpacked** and select this project folder.
-5. Open HabboCity and use the emoji button next to the chat box.
+1. Ouvre la page **Releases** de ce dépôt.
+2. Télécharge le ZIP de release (exemple: `city-plus-v1.0.zip`).
+3. Décompresse le ZIP dans un dossier sur ton ordinateur.
+4. Ouvre `chrome://extensions`.
+5. Active le **Mode développeur**.
+6. Clique sur **Charger l'extension non empaquetée**.
+7. Sélectionne le dossier décompressé (celui qui contient `manifest.json`).
+
+Important : n'utilise pas le fichier GitHub auto-généré `Source code (zip)` pour l'installation.
+
+## Mainteneur: créer un ZIP de release
+
+1. Génère le ZIP de production à la racine du projet:
+
+```powershell
+$v = (Get-Content .\manifest.json | ConvertFrom-Json).version
+$out = ".\city-plus-v$($v).zip"
+$files = @("manifest.json","content.js","config.js","mapping.js","style.css","supabase.js","modules","icons")
+Compress-Archive -Path $files -DestinationPath $out -Force
+```
+
+2. Sur GitHub, crée une nouvelle Release (tag du type `v1.0`).
+3. Ajoute `city-plus-vX.Y.zip` en tant qu'asset de release.
+4. Dans les notes de release, indique aux utilisateurs de télécharger cet asset ZIP puis de le charger en non empaqueté.

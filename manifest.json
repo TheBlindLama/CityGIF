@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "City+",
   "version": "1.0",
-  "description": "Utilisez des emojis et GIFs personnalisés sur HabboCity Nitro.",
+  "description": "Use custom emojis and GIFs on HabboCity Nitro.",
   "permissions": [
     "storage"
   ],

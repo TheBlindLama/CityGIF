@@ -16,3 +16,10 @@ config.js
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# Personal notes
+README_perso
+README_perso.md
+
+# Release staging folder
+.release_stage/
