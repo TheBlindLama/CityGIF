@@ -25,17 +25,3 @@ Si une personne n'a pas l'extension, elle voit quand même les codes texte lisib
 
 Important : n'utilise pas le fichier GitHub auto-généré `Source code (zip)` pour l'installation.
 
-## Mainteneur: créer un ZIP de release
-
-1. Génère le ZIP de production à la racine du projet:
-
-```powershell
-$v = (Get-Content .\manifest.json | ConvertFrom-Json).version
-$out = ".\city-plus-v$($v).zip"
-$files = @("manifest.json","content.js","config.js","mapping.js","style.css","supabase.js","modules","icons")
-Compress-Archive -Path $files -DestinationPath $out -Force
-```
-
-2. Sur GitHub, crée une nouvelle Release (tag du type `v1.0`).
-3. Ajoute `city-plus-vX.Y.zip` en tant qu'asset de release.
-4. Dans les notes de release, indique aux utilisateurs de télécharger cet asset ZIP puis de le charger en non empaqueté.
